@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="es">
+<head><link rel="manifest" href="manifest.json">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calculadora de Manejo de Aves - Agripac</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- jsPDF library for PDF generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .tab-active { border-color: #22c55e; color: #22c55e; background-color: #f0fdf4; }
+        .tab-inactive { border-color: transparent; color: #4b5563; }
+        input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 8px; background: #e2e8f0; border-radius: 5px; outline: none; opacity: 0.7; transition: opacity .2s; }
+        input[type="range"]:hover { opacity: 1; }
+        input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 24px; height: 24px; background: #22c55e; cursor: pointer; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 5px rgba(0,0,0,0.2); }
+        input[type="range"]::-moz-range-thumb { width: 24px; height: 24px; background: #22c55e; cursor: pointer; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 5px rgba(0,0,0,0.2); }
+        .toggle-bg { transition: background-color 0.2s ease-in-out; }
+        .toggle-bg:after { content: ''; position: absolute; top: 2px; left: 2px; background-color: white; border-radius: 9999px; width: 1.25rem; height: 1.25rem; transition: transform 0.2s ease-in-out; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06); }
+        input:checked + .toggle-bg:after { transform: translateX(1.25rem); }
+        input:checked + .toggle-bg { background-color: #22c55e; }
+        /* Styles for HTML report preview */
+        .report-preview table { width: 100%; border-collapse: collapse; }
+        .report-preview th, .report-preview td { border: 1px solid #e2e8f0; padding: 8px; text-align: left; font-size: 0.875rem; }
+        .report-preview th { background-color: #f1f5f9; }
+        .report-preview ul { margin: 0; padding-left: 20px; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+
+    <div id="app" class="container mx-auto p-4 sm:p-6 lg:p-8">
+        
+        <!-- Setup Screen -->
+        <div v-if="!almacenConfigurado" class="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-50">
+            <div class="bg-white p-8 rounded-xl shadow-2xl w-full max-w-md text-center">
+                <h2 class="text-2xl font-bold text-slate-800 mb-2">Bienvenido a la Calculadora Agripac</h2>
+                <p class="text-slate-500 mb-6">Por favor, ingrese el nombre del almacén para comenzar.</p>
+                <input type="text" v-model="nombreAlmacenInput" placeholder="Ej: Almacén Quito Norte" class="w-full p-3 border border-slate-300 rounded-lg shadow-sm mb-4">
+                <button @click="guardarAlmacen" class="w-full bg-green-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-700 transition-colors">Guardar y Continuar</button>
+            </div>
+        </div>
+
+        <div v-else>
+            <!-- Header -->
+            <header class="text-center mb-6 pb-4 border-b border-slate-200">
+                <div class="flex justify-center items-center gap-4 mb-3">
+                    <img src="https://placehold.co/80x40/22c55e/ffffff?text=Agripac&font=raleway" alt="Agripac Logo" class="h-10 rounded">
+                    <div>
+                        <h1 class="text-xl sm:text-2xl font-bold text-green-600">AGRIPAC</h1>
+                        <p class="text-slate-500 text-xs sm:text-sm">Calculadora de Consumo y Registro de Manejo de Aves</p>
+                    </div>
+                </div>
+                <p class="text-gray-800 font-semibold bg-gray-100 px-3 py-1 rounded-full inline-block text-sm">
+                    Almacén: <span class="text-green-700">{{ nombreAlmacen }}</span>
+                </p>
+            </header>
+
+            <!-- Main Content -->
+            <main>
+                <!-- Tabs -->
+                <div class="mb-6">
+                    <div class="sm:border-b sm:border-slate-200">
+                        <nav class="-mb-px flex flex-wrap gap-2 sm:gap-4" aria-label="Tabs">
+                            <button v-for="tabKey in Object.keys(tabNames)" :key="tabKey" @click="activeTab = tabKey" :class="activeTab === tabKey ? 'tab-active' : 'tab-inactive'" class="shrink-0 rounded-lg p-3 text-sm font-medium border transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2">
+                                {{ tabNames[tabKey] }}
+                            </button>
+                        </nav>
+                    </div>
+                </div>
+
+                <!-- Vistas por Pestaña -->
+                <div v-if="activeTab !== 'informe'">
+                    <div class="space-y-8">
+                        <div class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+                            <div v-for="(lote, index) in currentLotes" :key="lote.id" class="bg-white p-5 rounded-xl shadow-md border flex flex-col transition-all duration-300" :class="lote.alimentado ? 'border-green-400 bg-green-50' : 'border-slate-200'">
+                                <div class="flex justify-between items-center mb-2">
+                                    <h3 class="font-bold text-lg text-slate-800">Lote {{ index + 1 }}</h3>
+                                    <label :for="'alimentado-' + lote.id" class="flex items-center cursor-pointer">
+                                        <span class="text-sm font-medium text-slate-600 mr-2">Alimentado:</span>
+                                        <div class="relative"><input type="checkbox" :id="'alimentado-' + lote.id" class="sr-only" v-model="lote.alimentado"><div class="toggle-bg block bg-gray-200 w-11 h-6 rounded-full"></div></div>
+                                    </label>
+                                </div>
+                                <div class="text-sm text-slate-500 mb-4 border-b pb-2">
+                                    Alimento del día (SAP): <span class="font-bold text-slate-700">{{ getLotConsumptionData(lote.edad).sap }}</span>
+                                </div>
+                                <div class="space-y-5 flex-grow">
+                                    <div class="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label :for="'cantidad-' + lote.id" class="block text-sm font-medium text-slate-600 mb-1">Cant. Aves</label>
+                                            <input type="number" :id="'cantidad-' + lote.id" v-model.number="lote.cantidad" min="0" class="w-full p-2 border border-slate-300 rounded-md shadow-sm">
+                                        </div>
+                                        <div>
+                                            <label :for="'mortalidad-' + lote.id" class="block text-sm font-medium text-slate-600 mb-1">Mortalidad</label>
+                                            <input type="number" :id="'mortalidad-' + lote.id" v-model.number="lote.mortalidad" min="0" class="w-full p-2 border border-slate-300 rounded-md shadow-sm">
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label :for="'edad-' + lote.id" class="block text-sm font-medium text-slate-600 mb-1">Edad (días)</label>
+                                        <div class="flex items-center gap-3"><input type="range" :id="'edad-' + lote.id" v-model.number="lote.edad" :min="minAge" :max="maxAge" class="w-full"><span class="font-bold text-lg text-green-600 bg-green-100 rounded-md px-3 py-1 w-16 text-center">{{ lote.edad }}</span></div>
+                                    </div>
+                                    
+                                    <div class="pt-4 border-t space-y-2">
+                                        <h4 class="text-sm font-medium text-slate-600">Manejo Diario</h4>
+                                        <label class="flex items-center justify-between bg-slate-50 p-2 rounded-md"><span class="text-sm">Retiro de bandeja (excrementos)</span><div class="relative"><input type="checkbox" v-model="lote.bandejaRetirada" class="sr-only"><div class="toggle-bg block bg-gray-200 w-9 h-5 rounded-full"></div></div></label>
+                                        <label class="flex items-center justify-between bg-slate-50 p-2 rounded-md"><span class="text-sm">Limpieza de comedero</span><div class="relative"><input type="checkbox" v-model="lote.comederoLimpio" class="sr-only"><div class="toggle-bg block bg-gray-200 w-9 h-5 rounded-full"></div></div></label>
+                                        <label class="flex items-center justify-between bg-slate-50 p-2 rounded-md"><span class="text-sm">Limpieza de bebedero</span><div class="relative"><input type="checkbox" v-model="lote.bebederoLimpio" class="sr-only"><div class="toggle-bg block bg-gray-200 w-9 h-5 rounded-full"></div></div></label>
+                                    </div>
+                                    <div class="pt-4 border-t space-y-3">
+                                        <h4 class="text-sm font-medium text-slate-600">Tratamientos Aplicados</h4>
+                                        <div v-for="tr in lote.tratamientos" :key="tr.id" class="p-3 bg-slate-50 rounded-lg space-y-2 relative">
+                                            <button @click="removeTreatment(lote, tr.id)" class="absolute -top-2 -right-2 bg-red-500 text-white rounded-full h-5 w-5 text-xs flex items-center justify-center">&times;</button>
+                                            <select v-model="tr.producto" class="w-full p-2 border border-slate-300 rounded-md shadow-sm">
+                                                <option :value="null">Seleccione producto...</option>
+                                                <optgroup v-for="grupo in tratamientosList" :label="grupo.label"><option v-for="opcion in grupo.options" :value="opcion">{{ opcion.name }}</option></optgroup>
+                                            </select>
+                                            <input v-if="tr.producto && tr.producto.unit === 'custom'" type="text" v-model="tr.customName" placeholder="Nombre del producto" class="w-full p-2 border border-slate-300 rounded-md">
+                                            <div class="flex gap-2">
+                                                <input type="number" v-model.number="tr.dosis" placeholder="Dosis" class="w-1/2 p-2 border border-slate-300 rounded-md shadow-sm">
+                                                <select v-model="tr.unidad" class="w-1/2 p-2 border border-slate-300 rounded-md shadow-sm" :disabled="tr.producto && tr.producto.unit !== 'custom'"><option>cc/L agua</option><option>gr/L agua</option><option>gr/kg alimento</option></select>
+                                            </div>
+                                        </div>
+                                        <button @click="addTreatment(lote)" class="w-full text-sm bg-green-100 text-green-800 font-semibold py-2 rounded-md hover:bg-green-200 transition-colors">+ Agregar Tratamiento</button>
+                                    </div>
+                                    <div class="pt-4 border-t">
+                                        <label :for="'obs-' + lote.id" class="block text-sm font-medium text-slate-600 mb-1">Observación Breve</label>
+                                        <textarea :id="'obs-' + lote.id" v-model="lote.observaciones" rows="2" class="w-full p-2 border border-slate-300 rounded-md shadow-sm"></textarea>
+                                    </div>
+                                </div>
+                                <div class="mt-5 pt-4 border-t" v-if="lote.cantidad > 0">
+                                    <div class="bg-slate-100 p-3 rounded-lg">
+                                        <h4 class="text-sm font-bold text-slate-800 mb-2 text-center">Ración Única del Lote</h4>
+                                        <div class="flex justify-between items-baseline"><span class="text-sm font-medium text-slate-600">Kilogramos:</span><span class="font-bold text-base text-slate-800">{{ calculateLotConsumption(lote).kg.toFixed(3) }}</span></div>
+                                        <div class="flex justify-between items-baseline"><span class="text-sm font-medium text-slate-600">Libras:</span><span class="font-bold text-base text-slate-800">{{ calculateLotConsumption(lote).lbs.toFixed(3) }}</span></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="bg-green-600 text-white p-6 rounded-xl shadow-lg">
+                            <h3 class="text-xl font-bold text-center mb-3">Consumo Total del Día para {{ tabNames[activeTab] }}</h3>
+                            <div class="flex justify-around items-center text-center">
+                                <div><span class="text-sm uppercase tracking-wider opacity-80">Kilogramos</span><p class="text-4xl font-extrabold">{{ grandTotalKg.toFixed(3) }}</p></div>
+                                <div class="border-l-2 border-green-400 h-12"></div>
+                                <div><span class="text-sm uppercase tracking-wider opacity-80">Libras</span><p class="text-4xl font-extrabold">{{ grandTotalLbs.toFixed(3) }}</p></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div v-else>
+                    <div class="bg-white p-6 rounded-xl shadow-lg border border-slate-200">
+                        <h2 class="text-2xl font-bold text-slate-800 mb-4">Informe de Alimentación Diaria</h2>
+                        <div v-if="informeLotes.length > 0">
+                            <div class="report-preview overflow-x-auto" v-html="emailBodyPreview"></div>
+                            <div class="mt-6 pt-4 border-t grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                <button @click="descargarPDF" class="w-full bg-red-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-red-700 transition-colors flex items-center justify-center gap-2">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
+                                    Descargar PDF
+                                </button>
+                                <button @click="enviarWhatsApp" class="w-full bg-green-500 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-600 transition-colors flex items-center justify-center gap-2">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" /></svg>
+                                    Enviar por WhatsApp
+                                </button>
+                                <button @click="enviarInforme" class="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z" /><path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z" /></svg>
+                                    Enviar por Correo
+                                </button>
+                            </div>
+                        </div>
+                        <div v-else class="text-center py-10">
+                            <p class="text-slate-500">No hay lotes marcados como "Alimentado".</p>
+                            <p class="text-sm text-slate-400 mt-2">Active el interruptor "Alimentado" en cualquier lote para incluirlo en el informe.</p>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script>
+        const { createApp, ref, computed, watch, onMounted } = Vue
+
+        createApp({
+            setup() {
+                // --- STATE ---
+                const activeTab = ref('broiler');
+                const kgToLbs = 2.20462;
+                const nombreAlmacen = ref('');
+                const nombreAlmacenInput = ref('');
+                const almacenConfigurado = ref(false);
+
+                const tabNames = {
+                    broiler: 'Pollos Broiler', criollo: 'Pollos Criollos', grilla: 'Pollos Grilla',
+                    pavos: 'Pavos blancos', informe: 'Informe Diario'
+                };
+
+                const tratamientosList = [
+                    { label: 'Antibióticos en Agua (Líquidos)', options: [
+                        { name: 'CERZONA', unit: 'cc/L agua' }, { name: 'TILMICOB', unit: 'cc/L agua' },
+                        { name: 'FENICLOR', unit: 'cc/L agua' }, { name: 'DOXIVET', unit: 'cc/L agua' },
+                    ]},
+                    { label: 'Antibióticos/Vitaminas en Agua (Polvo)', options: [
+                        { name: 'AV-25', unit: 'gr/L agua' }, { name: 'BIOTHYL', unit: 'gr/L agua' }
+                    ]},
+                    { label: 'Vitamina en Agua (Polvo)', options: [ { name: 'ELECTRAVITE', unit: 'gr/L agua' } ]},
+                    { label: 'Aditivos en Balanceado (Polvo)', options: [
+                        { name: 'SUPLEGAN', unit: 'gr/kg alimento' }, { name: 'BOOSTER', unit: 'gr/kg alimento' },
+                        { name: 'Orégano en balanceado', unit: 'gr/kg alimento' },
+                        { name: 'Maíz Molido', unit: 'gr/kg alimento' }
+                    ]},
+                    { label: 'Ingredientes Alternativos', options: [
+                        { name: 'Azúcar en agua', unit: 'gr/L agua' }, { name: 'Vinagre en agua', unit: 'cc/L agua' }
+                    ]},
+                    { label: 'Otros', options: [ { name: 'Editar Nuevo Tratamiento', unit: 'custom' } ]}
+                ];
+
+                const createInitialLotState = () => ({
+                    cantidad: 0, edad: 1, alimentado: false, tratamientos: [], mortalidad: 0,
+                    bandejaRetirada: false, comederoLimpio: false, bebederoLimpio: false, observaciones: ''
+                });
+
+                const appData = ref({
+                    broiler: [ { id: 'b1', ...createInitialLotState() }, { id: 'b2', ...createInitialLotState() }, { id: 'b3', ...createInitialLotState() } ],
+                    criollo: [ { id: 'c1', ...createInitialLotState() }, { id: 'c2', ...createInitialLotState() }, { id: 'c3', ...createInitialLotState() } ],
+                    grilla: [ { id: 'g1', ...createInitialLotState() }, { id: 'g2', ...createInitialLotState() }, { id: 'g3', ...createInitialLotState() } ],
+                    pavos: [ { id: 'p1', ...createInitialLotState() }, { id: 'p2', ...createInitialLotState() }, { id: 'p3', ...createInitialLotState() } ]
+                });
+
+                const birdData = {
+                    broiler: [ { edad: '0', sap: '1002009', racion: 12 }, { edad: '1', sap: '1002013', racion: 17 }, { edad: '2', sap: '1002014', racion: 20 }, { edad: '3', sap: '1002015', racion: 20 }, { edad: '4', sap: '1002016', racion: 23 }, { edad: '5', sap: '1002017', racion: 26 }, { edad: '6', sap: '1002018', racion: 28 }, { edad: '7', sap: '1002019', racion: 32 }, { edad: '8', sap: '1002020', racion: 32 }, { edad: '9', sap: '1002021', racion: 36 }, { edad: '10', sap: '1002022', racion: 38 }, { edad: '11', sap: '1002023', racion: 41 }, { edad: '12', sap: '1002024', racion: 41 }, { edad: '13', sap: '1002025', racion: 43 }, { edad: '14', sap: '1002026', racion: 48 }, { edad: '15', sap: '1002027', racion: 51 }, { edad: '16', sap: '1002028', racion: 61 }, { edad: '17', sap: '1002029', racion: 65 }, { edad: '18', sap: '1002030', racion: 67 }, { edad: '19', sap: '1002031', racion: 70 }, { edad: '20', sap: '1002032', racion: 74 }, { edad: '21', sap: '1002033', racion: 78 }, { edad: '22', sap: '1002099', racion: 81 }, { edad: '23', sap: '1002035', racion: 81 }, { edad: '24', sap: '1002036', racion: 86 }, { edad: '25', sap: '1002037', racion: 90 }, { edad: '26', sap: '1002038', racion: 95 }, { edad: '27', sap: '1002039', racion: 97 }, { edad: '28', sap: '1002040', racion: 100 }, { edad: '29', sap: '1002041', racion: 103 }, { edad: '30', sap: '1002042', racion: 107 }, { edad: '31', sap: '1002043', racion: 110 }, { edad: '32', sap: '1002044', racion: 133 }, { edad: '33', sap: '1002045', racion: 120 }, { edad: '34', sap: '1002046', racion: 122 }, { edad: '35', sap: '1002047', racion: 127 }, { edad: '36 en adelante', sap: '1003743', racion: 127 } ],
+                    criollo: [ { edad: '0', sap: '1002048', racion: 12 }, { edad: '1', sap: '1002049', racion: 14 }, { edad: '2', sap: '1002050', racion: 17 }, { edad: '3', sap: '1002051', racion: 20 }, { edad: '4', sap: '1002052', racion: 23 }, { edad: '5', sap: '1002053', racion: 24 }, { edad: '6', sap: '1002054', racion: 25 }, { edad: '7', sap: '1002055', racion: 27 }, { edad: '8', sap: '1002056', racion: 29 }, { edad: '9', sap: '1002057', racion: 30 }, { edad: '10', sap: '1002058', racion: 31 }, { edad: '11', sap: '1002100', racion: 33 }, { edad: '12', sap: '1002060', racion: 33 }, { edad: '13', sap: '1002061', racion: 36 }, { edad: '14', sap: '1002062', racion: 38 }, { edad: '15', sap: '1002063', racion: 41 }, { edad: '16', sap: '1002064', racion: 43 }, { edad: '17', sap: '1002065', racion: 46 }, { edad: '18', sap: '1002066', racion: 49 }, { edad: '19', sap: '1002067', racion: 51 }, { edad: '20', sap: '1002068', racion: 55 }, { edad: '21', sap: '1002069', racion: 59 }, { edad: '22', sap: '1002070', racion: 61 }, { edad: '23', sap: '1002071', racion: 65 }, { edad: '24', sap: '1002072', racion: 67 }, { edad: '25', sap: '1002073', racion: 70 }, { edad: '26', sap: '1002074', racion: 78 }, { edad: '27', sap: '1002110', racion: 81 }, { edad: '28', sap: '1002076', racion: 86 }, { edad: '29', sap: '1002077', racion: 90 }, { edad: '30', sap: '1002078', racion: 93 }, { edad: '31', sap: '1002079', racion: 95 }, { edad: '32', sap: '1002080', racion: 97 }, { edad: '33', sap: '1002081', racion: 100 }, { edad: '34', sap: '1002082', racion: 103 }, { edad: '35', sap: '1002083', racion: 107 }, { edad: '36 en adelante', sap: '1003744', racion: 107 } ],
+                    grilla: [ { edad: '0', sap: '1004695', racion: 12 }, { edad: '1', sap: '1004696', racion: 14 }, { edad: '2', sap: '1004697', racion: 17 }, { edad: '3', sap: '1004698', racion: 20 }, { edad: '4', sap: '1004699', racion: 23 }, { edad: '5', sap: '1004700', racion: 24 }, { edad: '6', sap: '1004701', racion: 25 }, { edad: '7', sap: '1004702', racion: 27 }, { edad: '8', sap: '1004703', racion: 29 }, { edad: '9', sap: '1004704', racion: 30 }, { edad: '10', sap: '1004705', racion: 31 }, { edad: '11', sap: '1004706', racion: 33 }, { edad: '12', sap: '1004707', racion: 33 }, { edad: '13', sap: '1004708', racion: 36 }, { edad: '14', sap: '1004709', racion: 38 }, { edad: '15', sap: '1004710', racion: 41 }, { edad: '16', sap: '1004711', racion: 43 }, { edad: '17', sap: '1004712', racion: 46 }, { edad: '18', sap: '1004713', racion: 49 }, { edad: '19', sap: '1004714', racion: 50 }, { edad: '20', sap: '1004715', racion: 50 }, { edad: '21', sap: '1004716', racion: 50 }, { edad: '22', sap: '1004717', racion: 51 }, { edad: '23', sap: '1004718', racion: 51 }, { edad: '24', sap: '1004719', racion: 51 }, { edad: '25', sap: '1004720', racion: 53 }, { edad: '26', sap: '1004721', racion: 53 }, { edad: '27', sap: '1004722', racion: 53 }, { edad: '28', sap: '1004723', racion: 55 }, { edad: '29', sap: '1004724', racion: 55 }, { edad: '30', sap: '1004725', racion: 55 }, { edad: '31', sap: '1004726', racion: 60 }, { edad: '32', sap: '1004727', racion: 60 }, { edad: '33', sap: '1004728', racion: 65 }, { edad: '34', sap: '1004729', racion: 65 }, { edad: '35', sap: '1004730', racion: 70 }, { edad: '36 en adelante', sap: '1004731', racion: 70 } ],
+                    pavos: [ { edad: '0', sap: '1004109', racion: 30 }, { edad: '1', sap: '1004113', racion: 30 }, { edad: '2', sap: '1004114', racion: 33 }, { edad: '3', sap: '1004115', racion: 33 }, { edad: '4', sap: '1004116', racion: 35 }, { edad: '5', sap: '1004117', racion: 37 }, { edad: '6', sap: '1004118', racion: 37 }, { edad: '7', sap: '1004119', racion: 45 }, { edad: '8', sap: '1004120', racion: 48 }, { edad: '9', sap: '1004121', racion: 48 }, { edad: '10', sap: '1004122', racion: 48 }, { edad: '11', sap: '1004123', racion: 49 }, { edad: '12', sap: '1004124', racion: 55 }, { edad: '13', sap: '1004125', racion: 56 }, { edad: '14', sap: '1004126', racion: 60 }, { edad: '15', sap: '1004127', racion: 62 }, { edad: '16', sap: '1004128', racion: 63 }, { edad: '17', sap: '1004129', racion: 63 }, { edad: '18', sap: '1004130', racion: 65 }, { edad: '19', sap: '1004131', racion: 70 }, { edad: '20', sap: '1004132', racion: 75 }, { edad: '21', sap: '1004133', racion: 80 }, { edad: '22', sap: '1004134', racion: 85 }, { edad: '23 en adelante', sap: '1004135', racion: 90 } ]
+                };
+
+                // --- COMPUTED ---
+                const currentLotes = computed(() => appData.value[activeTab.value]);
+                const minAge = computed(() => activeTab.value !== 'informe' ? 0 : null);
+                const maxAge = computed(() => {
+                    if (activeTab.value === 'informe') return null;
+                    const data = birdData[activeTab.value];
+                    const ages = data.map(d => parseInt(d.edad)).filter(age => !isNaN(age));
+                    return Math.max(...ages);
+                });
+                const grandTotalKg = computed(() => {
+                    if (activeTab.value === 'informe') return 0;
+                    return currentLotes.value.reduce((total, lote) => total + calculateLotConsumption(lote).kg, 0);
+                });
+                const grandTotalLbs = computed(() => grandTotalKg.value * kgToLbs);
+                const informeLotes = computed(() => {
+                    const report = [];
+                    for (const birdType in appData.value) {
+                        appData.value[birdType].forEach((lote, index) => {
+                            if (lote.alimentado && lote.cantidad > 0) {
+                                const consumptionData = getLotConsumptionData(lote.edad, birdType);
+                                const consumption = calculateLotConsumption(lote, birdType);
+                                report.push({ ...lote, tipoAve: tabNames[birdType], loteNum: index + 1, sap: consumptionData.sap, kg: consumption.kg, lbs: consumption.lbs });
+                            }
+                        });
+                    }
+                    return report;
+                });
+                const emailBodyPreview = computed(() => generateHTMLReportBody(informeLotes.value, true));
+
+                // --- METHODS ---
+                const guardarAlmacen = () => {
+                    if (nombreAlmacenInput.value.trim()) {
+                        nombreAlmacen.value = nombreAlmacenInput.value.trim();
+                        localStorage.setItem('agripacAlmacenName', nombreAlmacen.value);
+                        almacenConfigurado.value = true;
+                    }
+                };
+                const addTreatment = (lote) => {
+                    lote.tratamientos.push({ id: Date.now(), producto: null, customName: '', dosis: null, unidad: 'cc/L agua' });
+                };
+                const removeTreatment = (lote, tratamientoId) => {
+                    lote.tratamientos = lote.tratamientos.filter(t => t.id !== tratamientoId);
+                };
+                const getLotConsumptionData = (age, birdType = activeTab.value) => {
+                    const data = birdData[birdType];
+                    let found = data.find(d => parseInt(d.edad) === age);
+                    if (!found) found = data.find(d => d.edad.includes('en adelante'));
+                    return found || { racion: 0, sap: 'N/A' };
+                };
+                const calculateLotConsumption = (lote, birdType = activeTab.value) => {
+                    if (!lote || lote.cantidad <= 0) return { kg: 0, lbs: 0 };
+                    const consumptionData = getLotConsumptionData(lote.edad, birdType);
+                    const totalKg = (consumptionData.racion * lote.cantidad) / 1000;
+                    return { kg: totalKg, lbs: totalKg * kgToLbs };
+                };
+                const generatePlainTextReport = (data) => {
+                    if (data.length === 0) return "No hay lotes alimentados para reportar.";
+                    let reportText = `Informe de Manejo Diario - Almacen: ${nombreAlmacen.value}\n`;
+                    reportText += "========================================================================================\n";
+                    data.forEach(lote => {
+                        const racionStr = `${lote.kg.toFixed(2)} kg / ${lote.lbs.toFixed(2)} lbs`;
+                        reportText += `> LOTE: #${lote.loteNum} (${lote.tipoAve})\n`;
+                        reportText += `  - Info:       ${lote.cantidad} aves, ${lote.edad} dias, ${lote.mortalidad} mortalidad\n`;
+                        reportText += `  - Alimento:   ${lote.sap} (${racionStr})\n`;
+                        reportText += `  - Manejo:     Bandeja: ${lote.bandejaRetirada ? 'SI' : 'NO'}, Comedero: ${lote.comederoLimpio ? 'SI' : 'NO'}, Bebedero: ${lote.bebederoLimpio ? 'SI' : 'NO'}\n`;
+                        if (lote.tratamientos && lote.tratamientos.length > 0 && lote.tratamientos.some(t => t.producto)) {
+                            reportText += `  - Tratamientos:\n`;
+                            lote.tratamientos.forEach(tr => {
+                                if (tr.producto) {
+                                    const productName = tr.producto.unit === 'custom' ? tr.customName : tr.producto.name;
+                                    const dosisStr = (tr.dosis && productName) ? `${tr.dosis} ${tr.unidad}` : 'N/A';
+                                    if (productName) reportText += `      * ${productName.padEnd(25)} Dosis: ${dosisStr}\n`;
+                                }
+                            });
+                        }
+                        if (lote.observaciones) {
+                            reportText += `  - Obs. Breve: ${lote.observaciones.replace(/\n/g, '\n                ')}\n`;
+                        }
+                        reportText += "----------------------------------------------------------------------------------------\n";
+                    });
+                    return reportText;
+                };
+                const generateHTMLReportBody = (data) => {
+                    if (data.length === 0) return "<p>No hay lotes alimentados para reportar.</p>";
+                    
+                    let tableHTML = `
+                        <h2 style="font-family: Arial, sans-serif; color: #333;">Informe de Manejo Diario</h2>
+                        <p style="font-family: Arial, sans-serif; color: #555;"><strong>Almacén:</strong> ${nombreAlmacen.value}</p>
+                        <table style="width: 100%; border-collapse: collapse; font-family: Arial, sans-serif;">
+                            <thead>
+                                <tr style="background-color: #f2f2f2;">
+                                    <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Lote</th>
+                                    <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Info General</th>
+                                    <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Alimento</th>
+                                    <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Manejo</th>
+                                    <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Tratamientos</th>
+                                    <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Obs. Breve</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                    `;
+
+                    data.forEach(lote => {
+                        const racionStr = `${lote.kg.toFixed(2)} kg / ${lote.lbs.toFixed(2)} lbs`;
+                        let tratamientosHTML = '<ul>';
+                        if (lote.tratamientos && lote.tratamientos.length > 0 && lote.tratamientos.some(t => t.producto)) {
+                            lote.tratamientos.forEach(tr => {
+                                if (tr.producto) {
+                                    const productName = tr.producto.unit === 'custom' ? tr.customName : tr.producto.name;
+                                    const dosisStr = (tr.dosis && productName) ? `${tr.dosis} ${tr.unidad}` : 'N/A';
+                                    if (productName) tratamientosHTML += `<li><strong>${productName}:</strong> ${dosisStr}</li>`;
+                                }
+                            });
+                        } else {
+                            tratamientosHTML += '<li>Ninguno</li>';
+                        }
+                        tratamientosHTML += '</ul>';
+
+                        tableHTML += `
+                            <tr style="border-bottom: 1px solid #ddd;">
+                                <td style="border: 1px solid #ddd; padding: 8px;"><strong>#${lote.loteNum}</strong><br>${lote.tipoAve}</td>
+                                <td style="border: 1px solid #ddd; padding: 8px;">${lote.cantidad} aves<br>${lote.edad} días<br>${lote.mortalidad} mortalidad</td>
+                                <td style="border: 1px solid #ddd; padding: 8px;"><strong>SAP:</strong> ${lote.sap}<br>${racionStr}</td>
+                                <td style="border: 1px solid #ddd; padding: 8px;">
+                                    Bandeja: ${lote.bandejaRetirada ? 'SI' : 'NO'}<br>
+                                    Comedero: ${lote.comederoLimpio ? 'SI' : 'NO'}<br>
+                                    Bebedero: ${lote.bebederoLimpio ? 'SI' : 'NO'}
+                                </td>
+                                <td style="border: 1px solid #ddd; padding: 8px;">${tratamientosHTML}</td>
+                                <td style="border: 1px solid #ddd; padding: 8px;">${lote.observaciones || 'Sin obs.'}</td>
+                            </tr>
+                        `;
+                    });
+
+                    tableHTML += '</tbody></table>';
+                    return tableHTML;
+                };
+
+                const enviarInforme = () => {
+                    const recipient = "squero@agripac.com.ec";
+                    const subject = `Informe de Manejo Diario - Almacen ${nombreAlmacen.value}`;
+                    const body = generateHTMLReportBody(informeLotes.value);
+                    const mailtoLink = `mailto:${recipient}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+                    window.location.href = mailtoLink;
+                };
+                const descargarPDF = () => {
+                    const { jsPDF } = window.jspdf;
+                    const doc = new jsPDF();
+                    const reportText = generatePlainTextReport(informeLotes.value);
+                    doc.setFont("Courier", "normal");
+                    doc.setFontSize(8);
+                    doc.text(reportText, 10, 10);
+                    const today = new Date().toISOString().slice(0, 10);
+                    doc.save(`Informe_Agripac_${nombreAlmacen.value}_${today}.pdf`);
+                };
+                const enviarWhatsApp = () => {
+                    const reportText = generatePlainTextReport(informeLotes.value);
+                    const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(reportText)}`;
+                    window.open(whatsappUrl, '_blank');
+                };
+
+                // --- WATCHERS & LIFECYCLE ---
+                onMounted(() => {
+                    const savedName = localStorage.getItem('agripacAlmacenName');
+                    if (savedName) {
+                        nombreAlmacen.value = savedName;
+                        almacenConfigurado.value = true;
+                    }
+                });
+                watch(appData, (newVal) => {
+                    for (const birdType in newVal) {
+                        newVal[birdType].forEach(lote => {
+                            if (lote.cantidad < 0) lote.cantidad = 0;
+                            if (lote.mortalidad < 0) lote.mortalidad = 0;
+                            lote.tratamientos.forEach(tr => {
+                                if (tr.dosis < 0) tr.dosis = 0;
+                                if (tr.producto && tr.producto.unit !== 'custom') tr.unidad = tr.producto.unit;
+                            });
+                        });
+                    }
+                }, { deep: true });
+
+                return {
+                    activeTab, appData, birdData, tabNames, tratamientosList, nombreAlmacen, nombreAlmacenInput, almacenConfigurado,
+                    currentLotes, minAge, maxAge, grandTotalKg, grandTotalLbs, informeLotes, emailBodyPreview,
+                    guardarAlmacen, getLotConsumptionData, calculateLotConsumption, enviarInforme, addTreatment, removeTreatment,
+                    descargarPDF, enviarWhatsApp
+                }
+            }
+        }).mount('#app')
+    </script>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./service-worker.js').then(registration => {
+        console.log('ServiceWorker registrado con éxito:', registration.scope);
+      }).catch(error => {
+        console.log('Fallo en el registro de ServiceWorker:', error);
+      });
+    });
+  }
+</script></body>
+</html>
